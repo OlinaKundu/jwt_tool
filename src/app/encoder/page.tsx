@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
 import { HeaderViewer } from "@/components/HeaderViewer";
 import { PayloadViewer } from "@/components/PayloadViewer";
 import { Copy, ShieldCheck, KeyRound } from "lucide-react";
@@ -13,9 +11,7 @@ const DEFAULT_PAYLOAD = JSON.stringify({ sub: "1234567890", name: "John Doe", ia
 
 const ALGORITHMS = ['HS256', 'HS384', 'HS512', 'none'];
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+
 
 export default function EncoderPage() {
   const [headerJson, setHeaderJson] = useState(DEFAULT_HEADER);

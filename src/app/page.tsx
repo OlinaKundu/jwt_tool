@@ -1,101 +1,222 @@
-import Image from "next/image";
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { TokenInput } from "@/components/TokenInput";
+import { HeaderViewer } from "@/components/HeaderViewer";
+import { PayloadViewer } from "@/components/PayloadViewer";
+import { VerifyPanel } from "@/components/VerifyPanel";
+import { decodeJWT } from "@/utils/decodeJWT";
+import { generateJWT } from "@/utils/generateJWT";
+import { verifyJWT, VerifyResult } from "@/utils/verifyJWT";
+import { ShieldCheck } from "lucide-react";
+
+const DEFAULT_TOKEN =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +
+  "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ." +
+  "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [token, setToken] = useState(DEFAULT_TOKEN);
+  const [headerJson, setHeaderJson] = useState("");
+  const [payloadJson, setPayloadJson] = useState("");
+  
+  const [headerError, setHeaderError] = useState("");
+  const [payloadError, setPayloadError] = useState("");
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const [secret, setSecret] = useState("your-256-bit-secret");
+  const [algorithm, setAlgorithm] = useState("HS256");
+  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+
+  // Decode on token change
+  useEffect(() => {
+    if (!token.trim()) {
+      setHeaderJson("");
+      setPayloadJson("");
+      setHeaderError("");
+      setPayloadError("");
+      setVerifyResult(null);
+      return;
+    }
+
+    const decoded = decodeJWT(token);
+    if (decoded) {
+      const { header, payload } = decoded;
+      // Format as JSON strings
+      setHeaderJson(JSON.stringify(header, null, 2));
+      setPayloadJson(JSON.stringify(payload, null, 2));
+      setHeaderError("");
+      setPayloadError("");
+      
+      // update algorithm from header if available
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const alg = (header as any)?.alg;
+      if (alg) {
+        setAlgorithm(alg);
+      }
+    } else {
+      setHeaderError("Invalid Base64 in Header");
+      setPayloadError("Invalid Base64 in Payload");
+    }
+  }, [token]);
+
+  // Verify and Check Security on changes
+  useEffect(() => {
+    if (!token.trim()) {
+      setWarnings([]);
+      setVerifyResult(null);
+      return;
+    }
+
+    // Verify token
+    const result = verifyJWT(token, secret, algorithm);
+    setVerifyResult(result);
+
+    // Compute Warnings
+    const newWarnings: string[] = [];
+    if (algorithm.toLowerCase() === "none") {
+      newWarnings.push('Critical: Algorithm "none" means no signature verification.');
+    } else if (algorithm.startsWith("HS") && secret.length < 32) {
+      newWarnings.push("Weak Secret: For HMAC, use a secret of at least 256 bits (32 characters).");
+    }
+
+    try {
+      if (payloadJson) {
+        const payloadObj = JSON.parse(payloadJson);
+        if (!payloadObj.exp) {
+          newWarnings.push("Warning: Token has no expiration (exp) claim.");
+        } else {
+          const now = Math.floor(Date.now() / 1000);
+          if (payloadObj.exp < now) {
+            newWarnings.push("Warning: Token is expired.");
+          }
+        }
+      }
+    } catch {
+      // JSON parse error, already handled by syntax checker
+    }
+    
+    setWarnings(newWarnings);
+  }, [token, secret, algorithm, payloadJson]);
+
+  const handleHeaderChange = (val: string) => {
+    setHeaderJson(val);
+    try {
+      JSON.parse(val);
+      setHeaderError("");
+    } catch (e) {
+      setHeaderError("Invalid JSON: " + (e as Error).message);
+    }
+  };
+
+  const handlePayloadChange = (val: string) => {
+    setPayloadJson(val);
+    try {
+      JSON.parse(val);
+      setPayloadError("");
+    } catch (e) {
+      setPayloadError("Invalid JSON: " + (e as Error).message);
+    }
+  };
+
+  const handleGenerate = () => {
+    if (headerError || payloadError) {
+      alert("Please fix JSON errors before generating token.");
+      return;
+    }
+    
+    try {
+      const headerObj = JSON.parse(headerJson || "{}");
+      const payloadObj = JSON.parse(payloadJson || "{}");
+      
+      const newToken = generateJWT(headerObj, payloadObj, secret, algorithm);
+      if (newToken) {
+        setToken(newToken);
+      } else {
+        alert("Failed to generate token.");
+      }
+    } catch (e) {
+      alert("Error: " + (e as Error).message);
+    }
+  };
+
+  return (
+    <div className="min-h-screen p-6 md:p-8 flex flex-col max-w-[1600px] mx-auto">
+      {/* Navbar area */}
+      <header className="flex justify-between items-center mb-8">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20">
+            <ShieldCheck className="text-white" size={24} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400 tracking-tight">
+              JWT Studio
+            </h1>
+            <p className="text-sm text-slate-400 font-medium">Decode, Verify, and Generate</p>
+          </div>
         </div>
+        
+        <div className="flex space-x-3">
+          <button 
+            onClick={() => {
+              setToken(DEFAULT_TOKEN);
+              setSecret("your-256-bit-secret");
+            }}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-sm font-medium rounded-lg transition-colors border border-slate-700 text-slate-300"
+          >
+            Example Token
+          </button>
+        </div>
+      </header>
+
+      {/* Main UI Grid */}
+      <main className="flex-grow flex flex-col gap-6">
+        
+        {/* Top Section: 3 Columns Desktop / Stacked Mobile */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-auto lg:h-[500px]">
+          {/* Left panel: Encoded Token */}
+          <div className="lg:col-span-1 h-[300px] lg:h-full">
+            <TokenInput 
+              value={token} 
+              onChange={setToken} 
+              onClear={() => setToken("")}
+            />
+          </div>
+
+          {/* Middle panel: Decoded Header */}
+          <div className="lg:col-span-1 h-[250px] lg:h-full">
+            <HeaderViewer 
+              value={headerJson} 
+              onChange={handleHeaderChange} 
+              error={headerError}
+            />
+          </div>
+
+          {/* Right panel: Decoded Payload */}
+          <div className="lg:col-span-1 h-[400px] lg:h-full">
+            <PayloadViewer 
+              value={payloadJson} 
+              onChange={handlePayloadChange} 
+              error={payloadError}
+            />
+          </div>
+        </div>
+
+        {/* Bottom Section: Verify Panel */}
+        <div className="w-full xl:w-2/3 mx-auto mt-2">
+          <VerifyPanel 
+            secret={secret}
+            onChangeSecret={setSecret}
+            algorithm={algorithm}
+            onChangeAlgorithm={setAlgorithm}
+            verifyResult={verifyResult}
+            onGenerate={handleGenerate}
+            warnings={warnings}
+          />
+        </div>
+
       </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
     </div>
   );
 }

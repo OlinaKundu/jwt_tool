@@ -4,6 +4,8 @@ This project is a web-based tool for encoding and decoding JSON Web Tokens (JWT)
 
 The application is built using Next.js, React, and TypeScript, with a maroon-themed interface designed for clarity and usability.
 
+Live Demo - https://jwt-tool.vercel.app/
+
 ---
 
 ## Overview
